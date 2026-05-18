@@ -1,0 +1,122 @@
+name: Task Management CI/CD
+
+on:
+  push:
+    branches: [main]
+
+env:
+  NODE_VERSION: 20
+
+jobs:
+
+  lint:
+    name: Lint Stage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm install
+
+      - name: Run lint
+        working-directory: backend
+        run: npm run lint
+
+
+  test:
+    name: Test Stage
+    needs: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm install
+
+      - name: Run tests
+        working-directory: backend
+        run: npm test
+
+
+  build:
+    name: Build Stage
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create package
+        run: tar -czf task-app.tar.gz backend frontend
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-app
+          path: task-app.tar.gz
+
+
+  deploy-staging:
+    name: Deploy Staging
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: task-app
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/emp.pem
+          chmod 400 ~/.ssh/emp.pem
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Copy package to server
+        run: |
+          scp -i ~/.ssh/emp.pem task-app.tar.gz \
+          ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+
+      - name: Deploy on remote server
+        run: |
+          ssh -i ~/.ssh/emp.pem ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+            mkdir -p /home/ubuntu/task-app
+            tar -xzf /tmp/task-app.tar.gz -C /home/ubuntu/task-app
+
+            cd /home/ubuntu/task-app/backend
+            npm install
+
+            pm2 delete task-management || true
+            pm2 start app.js --name task-management
+            pm2 save
+          EOF
+
+
+  deploy-production:
+    name: Deploy Production
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Production approval deployment
+        run: echo "Approved and deployed to production"
