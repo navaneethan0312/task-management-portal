@@ -69,54 +69,52 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: task-app
-          path: task-app.tar.gz
+         name: task-app
+         path: task-app.tar.gz
 
 
   deploy-staging:
     name: Deploy Staging
     needs: build
-    runs-on: devops-runner
+    runs-on: [self-hosted, Linux, X64, devops-runner]
 
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: task-app
+         name: task-app
 
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/emp.pem
-          chmod 400 ~/.ssh/emp.pem
-          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+       - name: Deploy staging
+         run: |
+          mkdir -p /home/ubuntu/staging
+          tar -xzf task-app.tar.gz -C /home/ubuntu/staging
 
-      - name: Copy package to server
-        run: |
-          scp -i ~/.ssh/emp.pem task-app.tar.gz \
-          ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+          cd /home/ubuntu/staging/backend
+          npm install
 
-      - name: Deploy on remote server
-        run: |
-          ssh -i ~/.ssh/emp.pem ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-            mkdir -p /home/ubuntu/task-app
-            tar -xzf /tmp/task-app.tar.gz -C /home/ubuntu/task-app
-
-            cd /home/ubuntu/task-app/backend
-            npm install
-
-            pm2 delete task-management || true
-            pm2 start app.js --name task-management
-            pm2 save
-          EOF
-
-
+          pm2 delete task-staging || true
+          PORT=3001 pm2 start app.js --name task-staging
+          pm2 save
   deploy-production:
     name: Deploy Production
     needs: deploy-staging
-    runs-on: devops-runner
-    environment: production
+    runs-on: [self-hosted, Linux, X64, devops-runner]
+  environment: production
 
-    steps:
-      - name: Production approval deployment
-        run: echo "Approved and deployed to production"
+  steps:
+     - name: Download artifact
+       uses: actions/download-artifact@v4
+       with:
+        name: task-app
+
+     - name: Deploy production
+       run:
+        mkdir -p /home/ubuntu/production
+        tar -xzf task-app.tar.gz -C /home/ubuntu/production
+
+        cd /home/ubuntu/production/backend
+        npm install
+
+        pm2 delete task-production || true
+        PORT=3000 pm2 start app.js --name task-production
+        pm2 save
