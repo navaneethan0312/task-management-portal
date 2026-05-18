@@ -8,7 +8,6 @@ env:
   NODE_VERSION: 20
 
 jobs:
-
   lint:
     name: Lint Stage
     runs-on: ubuntu-latest
@@ -29,7 +28,6 @@ jobs:
       - name: Run lint
         working-directory: backend
         run: npm run lint
-
 
   test:
     name: Test Stage
@@ -53,7 +51,6 @@ jobs:
         working-directory: backend
         run: npm test
 
-
   build:
     name: Build Stage
     needs: test
@@ -69,9 +66,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-         name: task-app
-         path: task-app.tar.gz
-
+          name: task-app
+          path: task-app.tar.gz
 
   deploy-staging:
     name: Deploy Staging
@@ -82,10 +78,10 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-         name: task-app
+          name: task-app
 
-       - name: Deploy staging
-         run: |
+      - name: Deploy staging
+        run: |
           mkdir -p /home/ubuntu/staging
           tar -xzf task-app.tar.gz -C /home/ubuntu/staging
 
@@ -95,26 +91,37 @@ jobs:
           pm2 delete task-staging || true
           PORT=3001 pm2 start app.js --name task-staging
           pm2 save
+
+      - name: Health check staging
+        run: |
+          sleep 10
+          curl http://localhost:3001 || exit 1
+
   deploy-production:
     name: Deploy Production
     needs: deploy-staging
     runs-on: [self-hosted, Linux, X64, devops-runner]
-  environment: production
+    environment: production
 
-  steps:
-     - name: Download artifact
-       uses: actions/download-artifact@v4
-       with:
-        name: task-app
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: task-app
 
-     - name: Deploy production
-       run:
-        mkdir -p /home/ubuntu/production
-        tar -xzf task-app.tar.gz -C /home/ubuntu/production
+      - name: Deploy production
+        run: |
+          mkdir -p /home/ubuntu/production
+          tar -xzf task-app.tar.gz -C /home/ubuntu/production
 
-        cd /home/ubuntu/production/backend
-        npm install
+          cd /home/ubuntu/production/backend
+          npm install
 
-        pm2 delete task-production || true
-        PORT=3000 pm2 start app.js --name task-production
-        pm2 save
+          pm2 delete task-production || true
+          PORT=3000 pm2 start app.js --name task-production
+          pm2 save
+
+      - name: Health check production
+        run: |
+          sleep 10
+          curl http://localhost:3000 || exit 1
